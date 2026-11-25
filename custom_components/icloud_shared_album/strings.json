@@ -7,6 +7,13 @@
         "data": {
           "url": "Public album link"
         }
+      },
+      "reconfigure": {
+        "title": "Change album link",
+        "description": "Paste the new album's public link. The Photos sensor and dashboard cards keep working.",
+        "data": {
+          "url": "Public album link"
+        }
       }
     },
     "error": {
@@ -15,7 +22,8 @@
       "cannot_connect": "Couldn't read the album from iCloud. Check the link and try again."
     },
     "abort": {
-      "already_configured": "This album is already added."
+      "already_configured": "This album is already added.",
+      "reconfigure_successful": "Album link updated."
     }
   },
   "options": {

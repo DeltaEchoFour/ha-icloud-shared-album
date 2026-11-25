@@ -6,6 +6,7 @@
   ],
   "config_flow": true,
   "dependencies": [
+    "frontend",
     "http"
   ],
   "documentation": "https://github.com/DeltaEchoFour/ha-icloud-shared-album",
@@ -15,5 +16,5 @@
   "requirements": [
     "pillow-heif>=0.22.0"
   ],
-  "version": "0.1.2"
+  "version": "0.2.0"
 }

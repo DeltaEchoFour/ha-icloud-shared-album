@@ -8,6 +8,28 @@ Reads **one public iCloud Shared Album** from its link, for browsing on a dashbo
 2. Install this repository from the Marketplace (custom repository, category Integration) and restart.
 3. **Settings → Devices & services → Add integration → iCloud Shared Album**, paste the link.
 
+## Dashboard card
+
+The integration loads `custom:icloud-album-card` on every dashboard (no separate install). Pick **iCloud Shared Album** in the card picker, or:
+
+```yaml
+type: custom:icloud-album-card
+entity: sensor.family_photos_photos
+mode: slideshow        # slideshow | grid | latest
+interval: 10           # seconds per photo (slideshow)
+order: shuffle         # shuffle | added | taken
+columns: 3             # grid
+max_photos: 0          # grid, 0 = all
+aspect_ratio: 4/3      # slideshow/latest; leave empty to fill the card
+fit: cover             # cover | contain
+caption: true          # month + "3 months ago"
+tap: viewer            # viewer | more-info | none
+```
+
+## Changing the album
+
+**Settings → Devices & services → iCloud Shared Album → ⋮ → Reconfigure** and paste a new link. The sensor and cards keep working.
+
 ## What you get
 
 - `sensor.<album>_photos`: number of photos; the entity picture is the newest photo.

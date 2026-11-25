@@ -5,6 +5,8 @@ import logging
 from typing import Any
 
 import asyncio
+import json
+from pathlib import Path
 
 from aiohttp import web
 import voluptuous as vol
@@ -42,8 +44,27 @@ def image_url(entry: ConfigEntry, photo_id: str, size: str) -> str:
     return IMAGE_PATH.format(key=entry.data[CONF_KEY], photo_id=to_ref(photo_id), size=size)
 
 
+CARD_URL = "/icloud_shared_album_static"
+CARD_FILE = "icloud-album-card.js"
+
+
+async def _register_card(hass: HomeAssistant) -> None:
+    """Serve custom:icloud-album-card and load it on every dashboard."""
+    from homeassistant.components.frontend import add_extra_js_url
+    from homeassistant.components.http import StaticPathConfig
+
+    here = Path(__file__).parent
+    version = await hass.async_add_executor_job(lambda: json.loads((here / "manifest.json").read_text())["version"])
+    await hass.http.async_register_static_paths([StaticPathConfig(CARD_URL, str(here / "www"), True)])
+    add_extra_js_url(hass, f"{CARD_URL}/{CARD_FILE}?v={version}")
+
+
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     hass.http.register_view(AlbumImageView(hass))
+    try:
+        await _register_card(hass)
+    except Exception:  # noqa: BLE001 - the card is optional; the integration still works without it
+        _LOGGER.exception("Couldn't register the iCloud album card")
 
     async def get_photos(call: ServiceCall) -> ServiceResponse:
         entries = [e for e in hass.config_entries.async_loaded_entries(DOMAIN)]
