@@ -4,9 +4,10 @@
 //   mode: slideshow | grid | latest  (default slideshow)
 //   interval: seconds per slide      (slideshow, default 10)
 //   order: shuffle | added | taken   (slideshow, default shuffle; grid/latest use added unless taken)
-//   columns: 3, max_photos: 0 (grid; 0 = all), aspect_ratio: "4/3" (slideshow/latest), fit: cover | contain
+//   columns: 3, max_photos: 0 (grid; 0 = all), aspect_ratio: "4/3" (slideshow/latest)
+//   fit: smart | cover | contain  (smart: on a wide frame, portraits pair up side by side or sit whole on a blurred copy)
 //   caption: true (date on slideshow/latest), title: optional heading, tap: viewer | none | more-info
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -27,8 +28,13 @@ ha-card{overflow:hidden;height:100%;display:flex;flex-direction:column}
 .head{padding:14px 16px 8px;font-size:var(--ha-card-header-font-size,20px);font-weight:500;line-height:1.2}
 .frame{position:relative;width:100%;flex:1;min-height:0;background:var(--secondary-background-color,#eee);cursor:pointer;overflow:hidden}
 .frame.fixed{flex:none}
-.frame img{position:absolute;inset:0;width:100%;height:100%;object-fit:var(--fit,cover);opacity:0;transition:opacity 1s ease}
-.frame img.on{opacity:1}
+.layer{position:absolute;inset:0;opacity:0;transition:opacity 1s ease}
+.layer.on{opacity:1}
+.layer img{position:absolute;inset:0;width:100%;height:100%;object-fit:var(--fit,cover);object-position:50% 35%}
+.layer .pair{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;gap:3px;background:var(--card-background-color,#fff)}
+.layer .pair img{position:static;object-fit:cover;object-position:50% 25%}
+.layer img.bg{object-fit:cover;filter:blur(28px) brightness(.8);transform:scale(1.15)}
+.layer img.fg{object-fit:contain;object-position:50% 50%}
 .cap{position:absolute;left:0;right:0;bottom:0;padding:28px 16px 12px;color:#fff;background:linear-gradient(transparent,rgba(0,0,0,.55));display:flex;justify-content:space-between;align-items:flex-end;gap:12px;pointer-events:none;font-size:14px}
 .cap b{font-weight:700;letter-spacing:.06em;text-transform:uppercase;font-size:12px;opacity:.9}
 .grid{display:grid;grid-template-columns:repeat(var(--cols,3),1fr);gap:4px;padding:4px;overflow-y:auto;flex:1;min-height:0}
@@ -61,7 +67,7 @@ class ICloudAlbumCard extends HTMLElement {
           { name: 'columns', selector: { number: { min: 1, max: 8, mode: 'box' } } },
           { name: 'max_photos', selector: { number: { min: 0, max: 2000, mode: 'box' } } },
           { name: 'aspect_ratio', selector: { text: {} } },
-          { name: 'fit', selector: { select: { mode: 'dropdown', options: [{ value: 'cover', label: 'Fill (crop)' }, { value: 'contain', label: 'Fit (whole photo)' }] } } }
+          { name: 'fit', selector: { select: { mode: 'dropdown', options: [{ value: 'smart', label: 'Smart (pair portraits)' }, { value: 'cover', label: 'Fill (crop)' }, { value: 'contain', label: 'Fit (whole photo)' }] } } }
         ] },
         { name: 'caption', selector: { boolean: {} } },
         { name: 'tap', selector: { select: { mode: 'dropdown', options: [{ value: 'viewer', label: 'Open full screen' }, { value: 'more-info', label: 'More info' }, { value: 'none', label: 'Nothing' }] } } }
@@ -71,7 +77,7 @@ class ICloudAlbumCard extends HTMLElement {
   }
   setConfig(config) {
     if (!config || !config.entity) throw new Error('icloud-album-card: set entity to an iCloud Shared Album photos sensor');
-    this._config = { mode: 'slideshow', interval: 10, order: 'shuffle', columns: 3, max_photos: 0, aspect_ratio: '4/3', fit: 'cover', caption: true, tap: 'viewer', ...config };
+    this._config = { mode: 'slideshow', interval: 10, order: 'shuffle', columns: 3, max_photos: 0, aspect_ratio: '4/3', fit: 'smart', caption: true, tap: 'viewer', ...config };
     this._built = false;
     if (this._hass) this._build();
   }
@@ -92,7 +98,7 @@ class ICloudAlbumCard extends HTMLElement {
     if (!this.shadowRoot) this.attachShadow({ mode: 'open' });
     const body = c.mode === 'grid'
       ? `<div class="grid" style="--cols:${Number(c.columns) || 3}"><div class="msg">Loading photos…</div></div>`
-      : `<div class="frame${c.aspect_ratio ? ' fixed' : ''}" style="--fit:${esc(c.fit)};${c.aspect_ratio ? `aspect-ratio:${esc(c.aspect_ratio)}` : ''}"><img alt=""><img alt=""><div class="cap"></div></div>`;
+      : `<div class="frame${c.aspect_ratio ? ' fixed' : ''}" style="--fit:${esc(c.fit === 'contain' ? 'contain' : 'cover')};${c.aspect_ratio ? `aspect-ratio:${esc(c.aspect_ratio)}` : ''}"><div class="layer"></div><div class="layer"></div><div class="cap"></div></div>`;
     this.shadowRoot.innerHTML = `<style>${CSS}</style><ha-card>${c.title ? `<div class="head">${esc(c.title)}</div>` : ''}${body}</ha-card>
       <div class="viewer"><img alt=""><button class="vbtn vx" data-v="close">${I.x}</button><button class="vbtn vprev" data-v="prev">${I.left}</button><button class="vbtn vnext" data-v="next">${I.right}</button><div class="vcap"></div></div>`;
     const root = this.shadowRoot;
@@ -126,7 +132,28 @@ class ICloudAlbumCard extends HTMLElement {
     if (c.mode === 'slideshow' && c.order === 'shuffle') for (let i = list.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [list[i], list[j]] = [list[j], list[i]]; }
     this._list = list;
     if (c.mode === 'grid' && Number(c.max_photos) > 0) this._list = list.slice(0, Number(c.max_photos));
+    this._slides = c.mode === 'grid' ? [] : this._buildSlides(list);
     this._idx = 0;
+  }
+  _wide() {
+    const f = this.shadowRoot && this.shadowRoot.querySelector('.frame');
+    if (f && f.clientWidth && f.clientHeight) return f.clientWidth / f.clientHeight > 1.2;
+    const [a, b] = String(this._config.aspect_ratio || '4/3').split(/[/:x]/).map(Number);
+    return !(a && b) || a / b > 1.2;
+  }
+  _buildSlides(list) {
+    const smart = this._config.fit === 'smart' && this._wide();
+    const portrait = p => p.w && p.h && p.h > p.w * 1.05, used = new Set(), slides = [];
+    list.forEach((p, i) => {
+      if (used.has(i)) return; used.add(i);
+      if (!smart || !portrait(p)) return slides.push({ kind: 'wide', photos: [p] });
+      if (this._config.mode !== 'latest') {
+        const j = list.findIndex((q, k) => k > i && !used.has(k) && portrait(q));
+        if (j > 0) { used.add(j); return slides.push({ kind: 'pair', photos: [p, list[j]] }); }
+      }
+      slides.push({ kind: 'solo', photos: [p] });
+    });
+    return slides;
   }
   _render() {
     if (!this._built || !this._list) return;
@@ -136,23 +163,29 @@ class ICloudAlbumCard extends HTMLElement {
       root.querySelector('.grid').innerHTML = this._list.map((p, i) => `<button class="tile" data-i="${i}"><img src="${esc(p.thumb)}" loading="lazy" decoding="async" alt=""></button>`).join('');
       return;
     }
+    this._slides = this._buildSlides(this._list);
     this._show(this._idx);
     this._schedule();
   }
   _show(i) {
-    const p = this._list[i]; if (!p) return;
-    const imgs = [...this.shadowRoot.querySelectorAll('.frame img')], cur = imgs.find(x => x.classList.contains('on')), next = imgs.find(x => x !== cur) || imgs[0];
-    next.onload = () => { next.classList.add('on'); if (cur && cur !== next) cur.classList.remove('on'); };
-    next.src = p.full;
-    const after = this._list[(i + 1) % this._list.length]; if (after) { const pre = new Image(); pre.src = after.full; }
+    const sl = this._slides[i]; if (!sl) return;
+    const p = sl.photos[0];
+    const layers = [...this.shadowRoot.querySelectorAll('.frame .layer')], cur = layers.find(x => x.classList.contains('on')), next = layers.find(x => x !== cur) || layers[0];
+    next.innerHTML = sl.kind === 'pair' ? `<div class="pair">${sl.photos.map(q => `<img src="${esc(q.full)}" alt="">`).join('')}</div>`
+      : sl.kind === 'solo' ? `<img class="bg" src="${esc(p.thumb || p.full)}" alt=""><img class="fg" src="${esc(p.full)}" alt="">`
+      : `<img src="${esc(p.full)}" alt="">`;
+    const imgs = [...next.querySelectorAll('img')]; let left = imgs.length;
+    const reveal = () => { next.classList.add('on'); if (cur && cur !== next) cur.classList.remove('on'); };
+    imgs.forEach(im => { const done = () => { if (--left === 0) reveal(); }; if (im.complete && im.naturalWidth) done(); else { im.onload = done; im.onerror = done; } });
+    const after = this._slides[(i + 1) % this._slides.length]; if (after) after.photos.forEach(q => { const pre = new Image(); pre.src = q.full; });
     const cap = this.shadowRoot.querySelector('.cap'), when = p.taken || p.added;
     cap.innerHTML = this._config.caption && when ? `<span>${esc(MONTHS[new Date(when).getMonth()] + ' ' + new Date(when).getFullYear())}</span><b>${esc(ago(when))}</b>` : '';
   }
   _schedule() {
     clearTimeout(this._timer);
     const c = this._config;
-    if (c.mode !== 'slideshow' || !this._list || this._list.length < 2) return;
-    this._timer = setTimeout(() => { this._idx = (this._idx + 1) % this._list.length; this._show(this._idx); this._schedule(); }, Math.max(3, Number(c.interval) || 10) * 1000);
+    if (c.mode !== 'slideshow' || !this._slides || this._slides.length < 2) return;
+    this._timer = setTimeout(() => { this._idx = (this._idx + 1) % this._slides.length; this._show(this._idx); this._schedule(); }, Math.max(3, Number(c.interval) || 10) * 1000);
   }
   _click(e) {
     const t = e.target, c = this._config;
@@ -163,7 +196,7 @@ class ICloudAlbumCard extends HTMLElement {
     if (!tile && !frame) return;
     if (c.tap === 'none') return;
     if (c.tap === 'more-info') { this.dispatchEvent(new CustomEvent('hass-more-info', { bubbles: true, composed: true, detail: { entityId: c.entity } })); return; }
-    this._open(tile ? +tile.dataset.i : this._idx);
+    this._open(tile ? +tile.dataset.i : Math.max(0, this._list.indexOf((this._slides[this._idx] || { photos: [] }).photos[0])));
   }
   _open(i) { this._vi = i; this._vOpen = true; clearTimeout(this._timer); this.shadowRoot.querySelector('.viewer').classList.add('open'); this._vshow(); }
   _close() { this._vOpen = false; this.shadowRoot.querySelector('.viewer').classList.remove('open'); this._schedule(); }

@@ -21,7 +21,7 @@ order: shuffle         # shuffle | added | taken
 columns: 3             # grid
 max_photos: 0          # grid, 0 = all
 aspect_ratio: 4/3      # slideshow/latest; leave empty to fill the card
-fit: cover             # cover | contain
+fit: smart             # smart | cover | contain (smart: on a wide frame, portraits pair up side by side, or sit whole on a blurred copy)
 caption: true          # month + "3 months ago"
 tap: viewer            # viewer | more-info | none
 ```
