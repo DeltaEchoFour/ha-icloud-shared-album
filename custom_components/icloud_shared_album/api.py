@@ -125,25 +125,32 @@ def _filename(fields: dict[str, Any]) -> str:
     return "image.jpg"
 
 
-def _ck_derivatives(master: dict[str, Any]) -> list[tuple[int, int | None, str]]:
-    """Return ``(width, height, url)`` for each browser-safe derivative, smallest first."""
+def _ck_derivatives(master: dict[str, Any]) -> list[tuple[int, int | None, str, str]]:
+    """Return ``(width, height, url, file_type)`` per derivative, smallest first.
+
+    Derivatives a browser can show (JPEG/PNG) are kept ahead of the rest; a
+    HEIC-only photo still gets its derivatives and is converted on the way out.
+    """
     item_type = str(_v(master, "itemType") or "").lower()
     name = quote(_filename(master), safe="")
-    out: list[tuple[int, int | None, str]] = []
+    out: list[tuple[int, int | None, str, str]] = []
     for res_key, w_key, h_key in _CK_RES:
         res = master.get(res_key)
         val = res.get("value") if isinstance(res, dict) else None
         url = val.get("downloadURL") if isinstance(val, dict) else None
         if not url:
             continue
+        ftype = str(_v(master, res_key[:-3] + "FileType") or (item_type if res_key == "resOriginalRes" else "")).lower()
         if res_key == "resOriginalRes" and item_type not in _BROWSER_SAFE:
             continue
-        out.append((_int(_v(master, w_key)) or 0, _int(_v(master, h_key)), url.replace("${f}", name)))
+        out.append((_int(_v(master, w_key)) or 0, _int(_v(master, h_key)), url.replace("${f}", name), ftype))
+    safe = [d for d in out if not d[3] or d[3] in _BROWSER_SAFE]
+    out = safe or out
     out.sort(key=lambda d: d[0])
     return out
 
 
-def _pick(derivs: list[tuple[int, int | None, str]], min_width: int) -> tuple[int, int | None, str]:
+def _pick(derivs: list[tuple], min_width: int) -> tuple:
     """Smallest derivative at least ``min_width`` wide, else the largest."""
     for d in derivs:
         if d[0] >= min_width:
@@ -190,6 +197,9 @@ def parse_ck_records(records: list[Any]) -> list[dict[str, Any]]:
                 "height": large[1],
                 "thumb_url": thumb[2],
                 "full_url": large[2],
+                "thumb_type": thumb[3],
+                "full_type": large[3],
+                "item_type": str(_v(master, "itemType") or ""),
             }
         )
     return photos
@@ -313,7 +323,7 @@ class SharedAlbumClient:
             derivs = []
             for d in (p.get("derivatives") or {}).values():
                 if d.get("checksum") in urls:
-                    derivs.append((_int(d.get("width")) or 0, _int(d.get("height")), urls[d["checksum"]]))
+                    derivs.append((_int(d.get("width")) or 0, _int(d.get("height")), urls[d["checksum"]], ""))
             if not derivs:
                 continue
             derivs.sort(key=lambda d: d[0])

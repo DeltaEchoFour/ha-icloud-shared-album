@@ -4,7 +4,9 @@
       "user": {
         "title": "iCloud Shared Album",
         "description": "Paste the album's public link. In Photos on iPhone, open the shared album, tap the people icon and turn on Public Website, then Share Link. Only this album is read; no Apple ID is used.",
-        "data": { "url": "Public album link" }
+        "data": {
+          "url": "Public album link"
+        }
       }
     },
     "error": {
@@ -12,25 +14,45 @@
       "not_public": "The album isn't shared as a public website. Turn on Public Website for it in Photos.",
       "cannot_connect": "Couldn't read the album from iCloud. Check the link and try again."
     },
-    "abort": { "already_configured": "This album is already added." }
+    "abort": {
+      "already_configured": "This album is already added."
+    }
   },
   "options": {
     "step": {
       "init": {
         "title": "Refresh",
-        "data": { "scan_minutes": "Check for new photos every (minutes)" }
+        "data": {
+          "scan_minutes": "Check for new photos every (minutes)"
+        }
       }
     }
   },
-  "entity": { "sensor": { "photos": { "name": "Photos" } } },
+  "entity": {
+    "sensor": {
+      "photos": {
+        "name": "Photos"
+      }
+    }
+  },
   "services": {
     "get_photos": {
       "name": "Get photos",
       "description": "Returns the album's photos, newest first, with image URLs served by Home Assistant.",
       "fields": {
-        "entity_id": { "name": "Album", "description": "The album's Photos sensor. Leave empty for every album." },
-        "limit": { "name": "Limit", "description": "Return only the newest N photos." }
+        "entity_id": {
+          "name": "Album",
+          "description": "The album's Photos sensor. Leave empty for every album."
+        },
+        "limit": {
+          "name": "Limit",
+          "description": "Return only the newest N photos."
+        }
       }
+    },
+    "check_images": {
+      "name": "Check images",
+      "description": "Diagnostics: fetches every photo from iCloud and reports its format and any errors."
     }
   }
 }

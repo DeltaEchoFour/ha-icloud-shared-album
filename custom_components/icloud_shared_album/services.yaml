@@ -11,3 +11,4 @@ get_photos:
           min: 1
           max: 20000
           mode: box
+check_images:

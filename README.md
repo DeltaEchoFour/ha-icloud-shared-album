@@ -15,6 +15,6 @@ Reads **one public iCloud Shared Album** from its link, for browsing on a dashbo
 - Images are served by Home Assistant at `/api/icloud_shared_album/<key>/<photo>/<thumb|full>`. HA fetches Apple's short-lived signed links itself, so dashboard URLs never expire and browsers can cache them. `<key>` is a random secret per album; anyone holding a full image URL can view that photo, the same as anyone holding the album's public link.
 - The album is checked for new photos every 30 minutes (change under the integration's **Configure**), or immediately with `homeassistant.update_entity` on the sensor.
 
-Videos are skipped. Both the newer `photos.icloud.com/shared/album/…` links and older `icloud.com/sharedalbum/#…` links work.
+HEIC images are converted to JPEG on the way out (via `pillow-heif`), so Chrome-based browsers and Android WebViews can show them. `icloud_shared_album.check_images` fetches every photo and reports its format, for troubleshooting. Videos are skipped. Both the newer `photos.icloud.com/shared/album/…` links and older `icloud.com/sharedalbum/#…` links work.
 
 Request shapes adapted from [eyalgal/album_slideshow](https://github.com/eyalgal/album_slideshow) (MIT).

@@ -4,7 +4,9 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from aiohttp import ClientError, web
+import asyncio
+
+from aiohttp import web
 import voluptuous as vol
 
 from homeassistant.components.http import HomeAssistantView
@@ -18,6 +20,7 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_KEY, DOMAIN, IMAGE_PATH, SERVICE_GET_PHOTOS, SIZES
 from .coordinator import AlbumCoordinator
+from .images import UpstreamError, check_photo
 
 _LOGGER = logging.getLogger(__name__)
 PLATFORMS = [Platform.SENSOR]
@@ -81,6 +84,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         ),
         supports_response=SupportsResponse.ONLY,
     )
+
+    async def check_images(call: ServiceCall) -> ServiceResponse:
+        """Fetch every photo from Apple and report what came back (diagnostics)."""
+        session = async_get_clientsession(hass)
+        report: dict[str, Any] = {}
+        for entry in hass.config_entries.async_loaded_entries(DOMAIN):
+            coord: AlbumCoordinator = entry.runtime_data
+            photos = (coord.data or {}).get("photos") or []
+            sem = asyncio.Semaphore(4)
+
+            async def one(p: dict[str, Any]) -> dict[str, Any]:
+                async with sem:
+                    return await check_photo(coord.images, session, p)
+
+            results = await asyncio.gather(*(one(p) for p in photos))
+            formats: dict[str, int] = {}
+            for r in results:
+                for size in ("thumb", "full"):
+                    k = f"{size}:" + (r[size].get("format") if r[size]["ok"] else f"error {r[size].get('status')}")
+                    formats[k] = formats.get(k, 0) + 1
+            problems = [r for r in results if not (r["thumb"]["ok"] and r["full"]["ok"]) or {r["thumb"].get("format"), r["full"].get("format")} - {"jpeg", "png"}]
+            report[entry.entry_id] = {"title": entry.title, "photos": len(results), "summary": formats, "not_plain_jpeg": problems}
+        return report
+
+    hass.services.async_register(DOMAIN, "check_images", check_images, supports_response=SupportsResponse.ONLY)
     return True
 
 
@@ -106,10 +134,11 @@ class AlbumImageView(HomeAssistantView):
 
     Apple's signed image links expire, so the dashboard never sees them: it
     asks for /api/icloud_shared_album/<key>/<photo>/<size>, and this view
-    fetches the current signed link server-side. The <key> is a random secret
-    per album (images in an <img> tag can't carry a login token), and the view
-    only ever serves photos of that one album. Responses are cacheable, so a
-    browser downloads each photo once.
+    fetches the current signed link server-side, converting HEIC to JPEG so
+    any browser can show it. The <key> is a random secret per album (images in
+    an <img> tag can't carry a login token), and the view only ever serves
+    photos of that one album. Responses are cacheable, so a browser downloads
+    each photo once.
     """
 
     url = "/api/icloud_shared_album/{key}/{photo_id}/{size}"
@@ -119,7 +148,7 @@ class AlbumImageView(HomeAssistantView):
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
 
-    async def get(self, request: web.Request, key: str, photo_id: str, size: str) -> web.StreamResponse:
+    async def get(self, request: web.Request, key: str, photo_id: str, size: str) -> web.Response:
         if size not in SIZES:
             raise web.HTTPNotFound
         entry = next(
@@ -134,29 +163,18 @@ class AlbumImageView(HomeAssistantView):
             photo = coord.by_id.get(photo_id)
             if photo is None:
                 raise web.HTTPNotFound
-            src = photo["thumb_url" if size == "thumb" else "full_url"]
             try:
-                async with session.get(src) as upstream:
-                    if upstream.status in (401, 403, 404, 410) and attempt == 0:
-                        # Signed link expired: refresh the album once and retry.
-                        await coord.async_refresh()
-                        continue
-                    if upstream.status != 200:
-                        raise web.HTTPBadGateway
-                    resp = web.StreamResponse(
-                        headers={
-                            "Content-Type": upstream.headers.get("Content-Type", "image/jpeg"),
-                            "Cache-Control": "private, max-age=2592000, immutable",
-                        }
-                    )
-                    if upstream.content_length:
-                        resp.content_length = upstream.content_length
-                    await resp.prepare(request)
-                    async for chunk in upstream.content.iter_chunked(65536):
-                        await resp.write(chunk)
-                    await resp.write_eof()
-                    return resp
-            except (ClientError, TimeoutError) as err:
-                _LOGGER.debug("image fetch failed for %s: %s", photo_id, err)
+                data, ctype = await coord.images.get(self.hass, session, photo_id, size, photo[f"{size}_url"])
+            except UpstreamError as err:
+                if attempt == 0 and err.status in (401, 403, 404, 410):
+                    # Signed link expired: refresh the album once and retry.
+                    await coord.async_refresh()
+                    continue
+                _LOGGER.warning("Couldn't serve %s %s (%s): %s", size, photo_id, photo.get(f"{size}_type") or "?", err)
                 raise web.HTTPBadGateway from err
+            return web.Response(
+                body=data,
+                content_type=ctype.split(";")[0] or "image/jpeg",
+                headers={"Cache-Control": "private, max-age=2592000, immutable"},
+            )
         raise web.HTTPBadGateway

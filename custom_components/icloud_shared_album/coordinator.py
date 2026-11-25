@@ -12,6 +12,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .api import AlbumError, SharedAlbumClient
+from .images import ImageStore
 from .const import CONF_SCAN_MINUTES, CONF_URL, DEFAULT_SCAN_MINUTES, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,6 +32,7 @@ class AlbumCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self.client = SharedAlbumClient(async_get_clientsession(hass), entry.data[CONF_URL])
         self.by_id: dict[str, dict[str, Any]] = {}
+        self.images = ImageStore()
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
