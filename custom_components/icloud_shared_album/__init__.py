@@ -29,8 +29,17 @@ CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 type AlbumConfigEntry = ConfigEntry[AlbumCoordinator]
 
 
+def to_ref(photo_id: str) -> str:
+    """URL-safe form of a photo id. Apple's ids are base64 and can contain / and +."""
+    return photo_id.replace("+", "-").replace("/", "_")
+
+
+def from_ref(ref: str) -> str:
+    return ref.replace("-", "+").replace("_", "/")
+
+
 def image_url(entry: ConfigEntry, photo_id: str, size: str) -> str:
-    return IMAGE_PATH.format(key=entry.data[CONF_KEY], photo_id=photo_id, size=size)
+    return IMAGE_PATH.format(key=entry.data[CONF_KEY], photo_id=to_ref(photo_id), size=size)
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -149,6 +158,7 @@ class AlbumImageView(HomeAssistantView):
         self.hass = hass
 
     async def get(self, request: web.Request, key: str, photo_id: str, size: str) -> web.Response:
+        photo_id = from_ref(photo_id)
         if size not in SIZES:
             raise web.HTTPNotFound
         entry = next(
@@ -162,6 +172,7 @@ class AlbumImageView(HomeAssistantView):
         for attempt in range(2):
             photo = coord.by_id.get(photo_id)
             if photo is None:
+                _LOGGER.debug("Unknown photo %s", photo_id)
                 raise web.HTTPNotFound
             try:
                 data, ctype = await coord.images.get(self.hass, session, photo_id, size, photo[f"{size}_url"])
