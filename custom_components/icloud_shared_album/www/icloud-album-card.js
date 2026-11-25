@@ -7,7 +7,7 @@
 //   columns: 3, max_photos: 0 (grid; 0 = all), aspect_ratio: "4/3" (slideshow/latest)
 //   fit: smart | cover | contain  (smart: on a wide frame, portraits pair up side by side or sit whole on a blurred copy)
 //   caption: true (date on slideshow/latest), title: optional heading, tap: viewer | none | more-info
-const VERSION = '0.3.0';
+const VERSION = '0.3.1';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -164,8 +164,23 @@ class ICloudAlbumCard extends HTMLElement {
       return;
     }
     this._slides = this._buildSlides(this._list);
-    this._show(this._idx);
+    this._settle(this._idx).then(() => { this._show(this._idx); this._settle(this._idx + 1); });
     this._schedule();
+  }
+  // Apple's width/height ignore the rotation flag; measure the photo as the browser draws it and regroup if needed.
+  _probe(p) {
+    if (p._probed) return Promise.resolve(false);
+    return new Promise(res => {
+      const im = new Image(), done = ch => { p._probed = true; res(ch); };
+      im.onload = () => { const was = p.h > p.w * 1.05; if (im.naturalWidth && im.naturalHeight) { p.w = im.naturalWidth; p.h = im.naturalHeight; } done((p.h > p.w * 1.05) !== was); };
+      im.onerror = () => done(false);
+      im.src = p.full;
+    });
+  }
+  async _settle(i) {
+    const sl = this._slides && this._slides[i]; if (!sl || this._config.fit !== 'smart') return;
+    const changed = (await Promise.all(sl.photos.map(p => this._probe(p)))).some(Boolean);
+    if (changed) this._slides = [...this._slides.slice(0, i), ...this._buildSlides(this._slides.slice(i).flatMap(x => x.photos))];
   }
   _show(i) {
     const sl = this._slides[i]; if (!sl) return;
@@ -177,7 +192,6 @@ class ICloudAlbumCard extends HTMLElement {
     const imgs = [...next.querySelectorAll('img')]; let left = imgs.length;
     const reveal = () => { next.classList.add('on'); if (cur && cur !== next) cur.classList.remove('on'); };
     imgs.forEach(im => { const done = () => { if (--left === 0) reveal(); }; if (im.complete && im.naturalWidth) done(); else { im.onload = done; im.onerror = done; } });
-    const after = this._slides[(i + 1) % this._slides.length]; if (after) after.photos.forEach(q => { const pre = new Image(); pre.src = q.full; });
     const cap = this.shadowRoot.querySelector('.cap'), when = p.taken || p.added;
     cap.innerHTML = this._config.caption && when ? `<span>${esc(MONTHS[new Date(when).getMonth()] + ' ' + new Date(when).getFullYear())}</span><b>${esc(ago(when))}</b>` : '';
   }
@@ -185,7 +199,7 @@ class ICloudAlbumCard extends HTMLElement {
     clearTimeout(this._timer);
     const c = this._config;
     if (c.mode !== 'slideshow' || !this._slides || this._slides.length < 2) return;
-    this._timer = setTimeout(() => { this._idx = (this._idx + 1) % this._slides.length; this._show(this._idx); this._schedule(); }, Math.max(3, Number(c.interval) || 10) * 1000);
+    this._timer = setTimeout(async () => { this._idx = (this._idx + 1) % this._slides.length; await this._settle(this._idx); this._show(this._idx); this._settle(this._idx + 1); this._schedule(); }, Math.max(3, Number(c.interval) || 10) * 1000);
   }
   _click(e) {
     const t = e.target, c = this._config;
