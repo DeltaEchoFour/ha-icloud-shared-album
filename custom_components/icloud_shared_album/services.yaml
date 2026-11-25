@@ -1,0 +1,13 @@
+get_photos:
+  fields:
+    entity_id:
+      selector:
+        entity:
+          integration: icloud_shared_album
+          domain: sensor
+    limit:
+      selector:
+        number:
+          min: 1
+          max: 20000
+          mode: box
